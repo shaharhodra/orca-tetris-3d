@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using System.Collections.Generic;
 
 public class TouchToSpawn : MonoBehaviour
 {
@@ -100,6 +101,13 @@ public class TouchToSpawn : MonoBehaviour
         {
             countdownText.text = "Time's Up!";
         }
+        
+        // Notify ConnectedCubesManager that time is up
+        ConnectedCubesManager manager = FindObjectOfType<ConnectedCubesManager>();
+        if (manager != null)
+        {
+            manager.OnGameTimeEnded();
+        }
     }
     
     // Handle both touch and mouse input for spawning
@@ -112,13 +120,105 @@ public class TouchToSpawn : MonoBehaviour
         // Check if the ray hits an object with the specified tag
         if (Physics.Raycast(ray, out hit) && hit.collider.CompareTag(touchableTag))
         {
-            // Calculate spawn position (hit point + offset)
-            Vector3 spawnPosition = hit.point + spawnOffset;
+            // Get or create the ConnectedCubesManager
+            ConnectedCubesManager manager = FindObjectOfType<ConnectedCubesManager>();
+            if (manager == null)
+            {
+                GameObject managerObj = new GameObject("ConnectedCubesManager");
+                manager = managerObj.AddComponent<ConnectedCubesManager>();
+            }
+
+            // If there are no cubes yet, allow placing the first cube anywhere
+            if (manager.GetCubeCount() == 0)
+            {
+                // Instantiate the first cube at the hit point
+                Vector3 firstCubePosition = hit.point + spawnOffset;
+                // Round to nearest whole number for grid alignment
+                firstCubePosition = new Vector3(
+                    Mathf.Round(firstCubePosition.x),
+                    Mathf.Round(firstCubePosition.y),
+                    Mathf.Round(firstCubePosition.z)
+                );
+                SpawnCube(manager, firstCubePosition, true);
+                return;
+            }
+
+            // Calculate grid-aligned position for the touch point using whole numbers
+            Vector3 touchGridPos = new Vector3(
+                Mathf.Round(hit.point.x),
+                Mathf.Round(hit.point.y),
+                Mathf.Round(hit.point.z)
+            );
             
-            // Instantiate the prefab at the hit position
-            Instantiate(prefabToSpawn, spawnPosition, Quaternion.identity);
+            // Check all existing cubes to see if the touch is adjacent to any of them
+            bool isAdjacentToAnyCube = false;
+            bool positionOccupied = false;
+            Vector3 spawnPosition = touchGridPos;
             
-            Debug.Log("Spawned " + prefabToSpawn.name + " at " + spawnPosition);
+            // First check if the position is already occupied
+            Collider[] colliders = Physics.OverlapBox(spawnPosition, Vector3.one * 0.4f);
+            foreach (var collider in colliders)
+            {
+                if (collider != null && collider.CompareTag(touchableTag))
+                {
+                    positionOccupied = true;
+                    break;
+                }
+            }
+            
+            if (positionOccupied)
+            {
+                Debug.Log("Position already occupied");
+                return;
+            }
+            
+            // Check all existing cubes
+            foreach (GameObject cube in manager.GetAllCubes())
+            {
+                if (cube == null) continue;
+                
+                Vector3 cubePos = new Vector3(
+                    Mathf.Round(cube.transform.position.x),
+                    Mathf.Round(cube.transform.position.y),
+                    Mathf.Round(cube.transform.position.z)
+                );
+                
+                // Check if the touch position is adjacent to this cube
+                if (Vector3.Distance(touchGridPos, cubePos) < 1.1f) // Slightly more than 1 to account for floating point errors
+                {
+                    isAdjacentToAnyCube = true;
+                    break;
+                }
+            }
+            
+            if (!isAdjacentToAnyCube)
+            {
+                Debug.Log("Can only place cubes adjacent to existing cubes");
+                return;
+            }
+            
+            // If we got here, the position is valid - spawn the cube
+            SpawnCube(manager, spawnPosition, false);
+            Debug.Log($"Placed adjacent cube at {spawnPosition}");
         }
     }
+    
+    private void SpawnCube(ConnectedCubesManager manager, Vector3 position, bool isFirstCube)
+    {
+        // Instantiate the prefab at the calculated position
+        GameObject newCube = Instantiate(prefabToSpawn, position, Quaternion.identity);
+        
+        // Set initial color to gray
+        Renderer cubeRenderer = newCube.GetComponent<Renderer>();
+        if (cubeRenderer != null)
+        {
+            cubeRenderer.material.color = Color.gray;
+        }
+        
+        // Register the new cube with the manager
+        manager.RegisterCube(newCube, isFirstCube);
+        
+        Debug.Log("Spawned " + prefabToSpawn.name + " at " + position);
+    }
+    
 }

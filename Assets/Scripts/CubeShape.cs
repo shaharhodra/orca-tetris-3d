@@ -19,6 +19,7 @@ public class CubeShape : MonoBehaviour
     private bool isMoving = false;
     private bool canFall = false;
     private bool shouldStartFalling = false;
+    private ConnectedCubesManager cubesManager;
 
     // Check if the TouchToSpawn timer has finished
     private bool HasTimerReachedZero()
@@ -47,6 +48,22 @@ public class CubeShape : MonoBehaviour
 
     void Start()
     {
+        // Check if this is the group parent (has children)
+        if (transform.childCount > 0)
+        {
+            // This is the group parent, initialize for group behavior
+            InitializeGroupBehavior();
+        }
+        else
+        {
+            // This is an individual cube, disable this component
+            enabled = false;
+            return;
+        }
+    }
+    
+    private void InitializeGroupBehavior()
+    {
         // Disable physics since we're handling movement manually
         Rigidbody rb = GetComponent<Rigidbody>();
         if (rb != null)
@@ -63,13 +80,13 @@ public class CubeShape : MonoBehaviour
         
         // Initialize target position
         targetPosition = transform.position;
-        shouldStartFalling = false;
+        shouldStartFalling = true; // Start falling immediately for the group
         
-        // Find the TouchToSpawn component in the scene
-        touchToSpawn = FindObjectOfType<TouchToSpawn>();
-        if (touchToSpawn == null)
+        // Find the ConnectedCubesManager
+        cubesManager = FindObjectOfType<ConnectedCubesManager>();
+        if (cubesManager == null)
         {
-            Debug.LogError("TouchToSpawn not found in the scene!");
+            Debug.LogError("ConnectedCubesManager not found in the scene!");
         }
     }
     
@@ -77,17 +94,8 @@ public class CubeShape : MonoBehaviour
     {
         if (isGrounded) return;
         
-        // Wait for the timer to reach zero
-        if (!shouldStartFalling)
-        {
-            // Check if timer has reached zero (you'll need to implement this check based on your timer system)
-            if (HasTimerReachedZero())
-            {
-                shouldStartFalling = true;
-                timer = 0f;
-            }
-            return;
-        }
+        // For the group, we don't need to wait for timer
+        if (!shouldStartFalling) return;
         
         // Timer has reached zero, start the falling sequence
         timer += Time.deltaTime;
@@ -136,6 +144,7 @@ public class CubeShape : MonoBehaviour
                 transform.position = targetPosition;
                 isMoving = false;
                 isGrounded = true;
+                // Group falling is now handled by the parent object
                 Debug.Log("Shape landed on " + hit.collider.gameObject.name);
             }
         }
