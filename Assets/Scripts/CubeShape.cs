@@ -20,6 +20,8 @@ public class CubeShape : MonoBehaviour
     private bool canFall = false;
     private bool shouldStartFalling = false;
     private ConnectedCubesManager cubesManager;
+    
+
 
     // Check if the TouchToSpawn timer has finished
     private bool HasTimerReachedZero()
@@ -64,7 +66,7 @@ public class CubeShape : MonoBehaviour
     
     private void InitializeGroupBehavior()
     {
-        // Disable physics since we're handling movement manually
+        // Disable physics on the parent since we're handling movement manually
         Rigidbody rb = GetComponent<Rigidbody>();
         if (rb != null)
         {
@@ -72,10 +74,28 @@ public class CubeShape : MonoBehaviour
             Destroy(rb);
         }
         
-        // Make sure we have a collider
-        if (GetComponent<Collider>() == null)
+        // Remove any existing collider from the parent
+        Collider parentCollider = GetComponent<Collider>();
+        if (parentCollider != null)
         {
-            gameObject.AddComponent<BoxCollider>();
+            Destroy(parentCollider);
+        }
+        
+        // Add colliders to all child cubes
+        foreach (Transform child in transform)
+        {
+            // Make sure the child has a collider
+            if (child.GetComponent<Collider>() == null)
+            {
+                child.gameObject.AddComponent<BoxCollider>();
+            }
+            
+            // Make sure the child has a rigidbody for physics
+            if (child.GetComponent<Rigidbody>() == null)
+            {
+                Rigidbody childRb = child.gameObject.AddComponent<Rigidbody>();
+                childRb.isKinematic = true; // We'll handle movement manually
+            }
         }
         
         // Initialize target position
@@ -87,6 +107,19 @@ public class CubeShape : MonoBehaviour
         if (cubesManager == null)
         {
             Debug.LogError("ConnectedCubesManager not found in the scene!");
+        }
+    }
+    
+    private void OnShapeLanded()
+    {
+        isGrounded = true;
+        // Group falling is now handled by the parent object
+        Debug.Log("Shape landed");
+        
+        // Notify the parent group that we've landed
+        if (cubesManager != null)
+        {
+            cubesManager.OnShapeLanded?.Invoke();
         }
     }
     
@@ -112,40 +145,97 @@ public class CubeShape : MonoBehaviour
             // Move towards target position if moving
             if (isMoving)
             {
+                // Move the entire group
                 transform.position = Vector3.MoveTowards(transform.position, targetPosition, Time.deltaTime * 10f);
+                
+                // Check if we've reached the target position
                 if (Vector3.Distance(transform.position, targetPosition) < 0.01f)
                 {
                     transform.position = targetPosition;
                     isMoving = false;
                     timer = 0f; // Reset timer after completing the move
+                    
+                    // Check if we should stop falling (hit the ground or another object)
+                    if (IsGrounded())
+                    {
+                        OnShapeLanded();
+                    }
                 }
             }
         }
     }
     
+    bool IsGrounded()
+    {
+        // Check if any child cube is touching the ground or another object
+        foreach (Transform child in transform)
+        {
+            Collider childCollider = child.GetComponent<Collider>();
+            if (childCollider == null) continue;
+            
+            // Cast a ray down from the bottom of the cube
+            Vector3 rayStart = child.position - new Vector3(0, childCollider.bounds.extents.y, 0);
+            float rayLength = 0.2f; // Small distance to check for ground
+            
+            // Check for any colliders below this cube (except other cubes in the same group)
+            RaycastHit[] hits = Physics.RaycastAll(rayStart, Vector3.down, rayLength, ~LayerMask.GetMask("Ignore Raycast"));
+            foreach (var hit in hits)
+            {
+                if (hit.collider != null && !hit.transform.IsChildOf(transform))
+                {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
+    }
+    
     void TryMoveDown()
     {
-        // Calculate the bottom of the object
-        float objectHeight = GetComponent<Collider>().bounds.size.y;
-        float rayLength = stepSize + (objectHeight / 2f);
+        // Check if any child cube would hit something if we move down
+        bool wouldHit = false;
+        float minDistance = float.MaxValue;
         
-        // Cast a ray down to detect surfaces
-        RaycastHit hit;
-        if (Physics.Raycast(transform.position, Vector3.down, out hit, rayLength, ~LayerMask.GetMask("Ignore Raycast")))
+        // Check each child cube
+        foreach (Transform child in transform)
         {
-            // Calculate exact position above the hit point
-            float targetY = hit.point.y + (objectHeight / 2f);
-            targetPosition = new Vector3(transform.position.x, targetY, transform.position.z);
-            isMoving = true;
+            Collider childCollider = child.GetComponent<Collider>();
+            if (childCollider == null) continue;
             
-            // If we're very close to the surface, just snap to it
-            if (Vector3.Distance(transform.position, targetPosition) < 0.1f)
+            // Calculate ray start at the bottom of the cube
+            Vector3 rayStart = child.position - new Vector3(0, childCollider.bounds.extents.y, 0);
+            float rayLength = stepSize + 0.1f; // Small offset to detect surfaces just below
+            
+            // Cast a ray down from the bottom of this cube
+            RaycastHit hit;
+            if (Physics.Raycast(rayStart, Vector3.down, out hit, rayLength, ~LayerMask.GetMask("Ignore Raycast")))
             {
-                transform.position = targetPosition;
-                isMoving = false;
-                isGrounded = true;
-                // Group falling is now handled by the parent object
-                Debug.Log("Shape landed on " + hit.collider.gameObject.name);
+                // Ignore hits with other cubes in the same group
+                if (hit.transform.IsChildOf(transform)) continue;
+                
+                wouldHit = true;
+                float distance = hit.distance;
+                if (distance < minDistance)
+                {
+                    minDistance = distance;
+                }
+            }
+        }
+        
+        if (wouldHit)
+        {
+            // Move down until we hit something
+            float moveDistance = minDistance - 0.1f; // Small offset to prevent sinking
+            if (moveDistance > 0)
+            {
+                targetPosition = transform.position + Vector3.down * moveDistance;
+                isMoving = true;
+            }
+            else
+            {
+                // We're already touching something below
+                OnShapeLanded();
             }
         }
         else

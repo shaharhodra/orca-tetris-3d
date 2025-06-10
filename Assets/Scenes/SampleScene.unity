@@ -285,7 +285,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   connectionDistance: 2
-  mergeTime: 5
 --- !u!4 &410511159
 Transform:
   m_ObjectHideFlags: 0
@@ -621,7 +620,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ff8e473a219809f4c8826f5e19437f2a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  mergeTime: 5
   cubePrefab: {fileID: 2876661096310876044, guid: be4a9b5d4ceec17459669761c01509d8,
     type: 3}
 --- !u!4 &1375128161
@@ -651,7 +649,7 @@ GameObject:
   - component: {fileID: 1810652243}
   - component: {fileID: 1810652242}
   - component: {fileID: 1810652241}
-  - component: {fileID: 1810652240}
+  - component: {fileID: 1810652245}
   m_Layer: 0
   m_Name: Plane
   m_TagString: Touchable
@@ -659,24 +657,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &1810652240
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1810652239}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d190371e3e0bba74ead7f6eca5946f2c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  prefabToSpawn: {fileID: 2876661096310876044, guid: be4a9b5d4ceec17459669761c01509d8,
-    type: 3}
-  touchableTag: Touchable
-  spawnOffset: {x: 0, y: 0, z: 0}
-  countdownDuration: 5
-  countdownText: {fileID: 245121911}
 --- !u!64 &1810652241
 MeshCollider:
   m_ObjectHideFlags: 0
@@ -767,6 +747,24 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 90, y: 0, z: 0}
+--- !u!114 &1810652245
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1810652239}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d190371e3e0bba74ead7f6eca5946f2c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  prefabToSpawn: {fileID: 2876661096310876044, guid: be4a9b5d4ceec17459669761c01509d8,
+    type: 3}
+  touchableTag: Touchable
+  spawnOffset: {x: 0, y: 0, z: 0}
+  countdownDuration: 5
+  countdownText: {fileID: 245121911}
 --- !u!1 &1976680696
 GameObject:
   m_ObjectHideFlags: 0

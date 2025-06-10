@@ -17,6 +17,9 @@ public class ConnectedCubesManager : MonoBehaviour
     private Vector3 fallTargetPosition;
     private float fallSpeed = 10f;
     
+    // Event for when a shape has finished landing
+    public System.Action OnShapeLanded;
+    
     private void Awake()
     {
         if (Instance == null)
@@ -52,6 +55,20 @@ public class ConnectedCubesManager : MonoBehaviour
         return new List<GameObject>(allCubes);
     }
     
+    public void ClearAllCubes()
+    {
+        Debug.Log("Resetting cube manager for new shape");
+        
+        // Create a new list for the next shape
+        allCubes = new List<GameObject>();
+        firstCube = null;
+        cubesParent = null;
+        
+        // Reset game state
+        gameEnded = false;
+        isFalling = false;
+    }
+    
     public GameObject GetFirstCube()
     {
         return firstCube;
@@ -67,11 +84,17 @@ public class ConnectedCubesManager : MonoBehaviour
         if (gameEnded) return;
         gameEnded = true;
         
-        // Create a parent object for all cubes
-        cubesParent = new GameObject("AllCubes");
-        
-        // Add CubeShape component to the parent
-        var groupCubeShape = cubesParent.AddComponent<CubeShape>();
+        // Create a parent object for all cubes if it doesn't exist
+        if (cubesParent == null)
+        {
+            cubesParent = new GameObject("AllCubes");
+            // Add CubeShape component to the parent
+            var groupCubeShape = cubesParent.AddComponent<CubeShape>();
+            
+            // Configure the cube shape
+            groupCubeShape.fallInterval = 0.5f;
+            groupCubeShape.stepSize = 0.5f;
+        }
         
         // Generate a random color
         Color randomColor = new Color(
@@ -80,7 +103,7 @@ public class ConnectedCubesManager : MonoBehaviour
             Random.Range(0.2f, 0.9f)
         );
         
-        // Make all cubes children of the parent and change their color
+        // Make all cubes children of the parent and update their components
         foreach (GameObject cube in allCubes.ToArray())
         {
             if (cube != null)
@@ -91,6 +114,20 @@ public class ConnectedCubesManager : MonoBehaviour
                 {
                     Destroy(cubeShape);
                 }
+                
+                // Ensure the cube has a collider
+                if (cube.GetComponent<Collider>() == null)
+                {
+                    cube.AddComponent<BoxCollider>();
+                }
+                
+                // Ensure the cube has a kinematic rigidbody
+                Rigidbody rb = cube.GetComponent<Rigidbody>();
+                if (rb == null)
+                {
+                    rb = cube.AddComponent<Rigidbody>();
+                }
+                rb.isKinematic = true;
                 
                 // Change parent
                 cube.transform.SetParent(cubesParent.transform);
@@ -164,11 +201,13 @@ public class ConnectedCubesManager : MonoBehaviour
                 cubesParent.transform.position = fallTargetPosition;
                 isFalling = false;
                 SnapGroupToGrid();
+                // Notify that the shape has landed
+                OnShapeLanded?.Invoke();
             }
         }
     }
     
-    private void SnapGroupToGrid()
+    void SnapGroupToGrid()
     {
         if (cubesParent == null) return;
         
@@ -189,7 +228,7 @@ public class ConnectedCubesManager : MonoBehaviour
         Debug.Log("Group snapped to grid");
     }
     
-    public void StartGroupFall()
+    void StartGroupFall()
     {
         if (cubesParent == null || allCubes.Count == 0) return;
         
@@ -235,6 +274,8 @@ public class ConnectedCubesManager : MonoBehaviour
             {
                 // Already on the ground, just snap to grid
                 SnapGroupToGrid();
+                // Notify that the shape has landed
+                OnShapeLanded?.Invoke();
             }
         }
         else

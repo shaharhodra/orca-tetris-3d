@@ -26,14 +26,37 @@ public class TouchToSpawn : MonoBehaviour
     private bool isTimerRunning = false;
     private bool canSpawn = false;
 
+    private ConnectedCubesManager cubesManager;
+
     private void Start()
     {
+        // Get or create the ConnectedCubesManager
+        cubesManager = FindObjectOfType<ConnectedCubesManager>();
+        if (cubesManager == null)
+        {
+            GameObject managerObj = new GameObject("ConnectedCubesManager");
+            cubesManager = managerObj.AddComponent<ConnectedCubesManager>();
+        }
+        
+        // Subscribe to the shape landed event
+        cubesManager.OnShapeLanded += OnShapeLanded;
+        
         // Start the countdown immediately when the game begins
         StartCountdown();
+    }
+    
+    private void OnDestroy()
+    {
+        // Unsubscribe to prevent memory leaks
+        if (cubesManager != null)
+        {
+            cubesManager.OnShapeLanded -= OnShapeLanded;
+        }
     }
 
     void Update()
     {
+        // Handle timer
         if (isTimerRunning)
         {
             // Update the timer
@@ -53,7 +76,7 @@ public class TouchToSpawn : MonoBehaviour
         }
         
         // Check for touches or mouse clicks if we can spawn
-        if (canSpawn)
+        if (canSpawn && isTimerRunning)
         {
             // Handle touch input
             if (Input.touchCount > 0)
@@ -75,8 +98,10 @@ public class TouchToSpawn : MonoBehaviour
     
     public void StartCountdown()
     {
+        Debug.Log("Starting countdown");
         currentTime = countdownDuration;
         isTimerRunning = true;
+        canSpawn = true;
         canSpawn = true;  // Enable spawning when countdown starts
         
         if (countdownText != null)
@@ -94,6 +119,9 @@ public class TouchToSpawn : MonoBehaviour
     
     private void TimerFinished()
     {
+        if (!isTimerRunning) return; // Prevent multiple triggers
+        
+        Debug.Log("Timer finished, grouping cubes");
         isTimerRunning = false;
         canSpawn = false;  // Disable spawning when time's up
         
@@ -103,122 +131,234 @@ public class TouchToSpawn : MonoBehaviour
         }
         
         // Notify ConnectedCubesManager that time is up
-        ConnectedCubesManager manager = FindObjectOfType<ConnectedCubesManager>();
-        if (manager != null)
+        if (cubesManager != null)
         {
-            manager.OnGameTimeEnded();
+            cubesManager.OnGameTimeEnded();
+        }
+        else
+        {
+            Debug.LogError("No ConnectedCubesManager found!");
+        }
+    }
+    
+    private void OnShapeLanded()
+    {
+        Debug.Log("Shape landed, preparing for new shape");
+        
+        // Reset the manager for new shape
+        if (cubesManager != null)
+        {
+            cubesManager.ClearAllCubes();
+        }
+        
+        // Reset the timer
+        StartCountdown();
+        
+        // Enable spawning for new shape
+        canSpawn = true;
+        isTimerRunning = true;
+        
+        if (countdownText != null)
+        {
+            countdownText.text = Mathf.CeilToInt(currentTime).ToString();
         }
     }
     
     // Handle both touch and mouse input for spawning
     private void HandleSpawnInput(Vector2 screenPosition)
     {
+        Debug.Log("HandleSpawnInput called");
+        
         // Create a ray from the screen position
         Ray ray = Camera.main.ScreenPointToRay(screenPosition);
         RaycastHit hit;
 
+        Debug.Log("Casting ray from " + screenPosition);
+        
         // Check if the ray hits an object with the specified tag
-        if (Physics.Raycast(ray, out hit) && hit.collider.CompareTag(touchableTag))
+        if (!Physics.Raycast(ray, out hit))
         {
-            // Get or create the ConnectedCubesManager
-            ConnectedCubesManager manager = FindObjectOfType<ConnectedCubesManager>();
-            if (manager == null)
-            {
-                GameObject managerObj = new GameObject("ConnectedCubesManager");
-                manager = managerObj.AddComponent<ConnectedCubesManager>();
-            }
+            Debug.Log("No hit detected");
+            return;
+        }
 
-            // If there are no cubes yet, allow placing the first cube anywhere
-            if (manager.GetCubeCount() == 0)
-            {
-                // Instantiate the first cube at the hit point
-                Vector3 firstCubePosition = hit.point + spawnOffset;
-                // Round to nearest whole number for grid alignment
-                firstCubePosition = new Vector3(
-                    Mathf.Round(firstCubePosition.x),
-                    Mathf.Round(firstCubePosition.y),
-                    Mathf.Round(firstCubePosition.z)
-                );
-                SpawnCube(manager, firstCubePosition, true);
-                return;
-            }
+        Debug.Log("Hit: " + hit.collider.name + " with tag: " + hit.collider.tag);
+        
+        if (!hit.collider.CompareTag(touchableTag))
+        {
+            Debug.Log("Hit object is not touchable");
+            return;
+        }
 
-            // Calculate grid-aligned position for the touch point using whole numbers
-            Vector3 touchGridPos = new Vector3(
-                Mathf.Round(hit.point.x),
-                Mathf.Round(hit.point.y),
-                Mathf.Round(hit.point.z)
+        Debug.Log("Hit touchable object");
+        
+        // Use the existing manager reference
+        if (cubesManager == null)
+        {
+            Debug.LogError("cubesManager is null!");
+            return;
+        }
+
+        int cubeCount = cubesManager.GetCubeCount();
+        Debug.Log("Current cube count: " + cubeCount);
+
+        // If there are no cubes yet, allow placing the first cube anywhere
+        if (cubeCount == 0)
+        {
+            Debug.Log("Placing first cube");
+            // Instantiate the first cube at the hit point
+            Vector3 firstCubePosition = hit.point + spawnOffset;
+            // Round to nearest whole number for grid alignment
+            firstCubePosition = new Vector3(
+                Mathf.Round(firstCubePosition.x),
+                Mathf.Round(firstCubePosition.y),
+                Mathf.Round(firstCubePosition.z)
             );
+            Debug.Log("First cube position: " + firstCubePosition);
+            SpawnCube(cubesManager, firstCubePosition, true);
+            return;
+        }
+
+        // Calculate grid-aligned position for the touch point using whole numbers
+        Vector3 touchGridPos = new Vector3(
+            Mathf.Round(hit.point.x),
+            Mathf.Round(hit.point.y),
+            Mathf.Round(hit.point.z)
+        );
+        
+        Debug.Log("Touch grid position: " + touchGridPos);
+        
+        // Check all existing cubes to see if the touch is adjacent to any of them
+        bool isAdjacentToAnyCube = false;
+        bool positionOccupied = false;
+        Vector3 spawnPosition = touchGridPos;
+        
+        Debug.Log("Checking position occupation...");
             
-            // Check all existing cubes to see if the touch is adjacent to any of them
-            bool isAdjacentToAnyCube = false;
-            bool positionOccupied = false;
-            Vector3 spawnPosition = touchGridPos;
-            
-            // First check if the position is already occupied
-            Collider[] colliders = Physics.OverlapBox(spawnPosition, Vector3.one * 0.4f);
-            foreach (var collider in colliders)
+        // First check if the position is already occupied
+        Debug.Log("Checking for colliders at " + spawnPosition);
+        Collider[] colliders = Physics.OverlapBox(spawnPosition, Vector3.one * 0.4f);
+        Debug.Log("Found " + colliders.Length + " colliders at position");
+        
+        foreach (var collider in colliders)
+        {
+            if (collider != null)
             {
-                if (collider != null && collider.CompareTag(touchableTag))
+                Debug.Log("Found collider: " + collider.name + " with tag: " + collider.tag);
+                if (collider.CompareTag(touchableTag))
                 {
                     positionOccupied = true;
+                    Debug.Log("Position occupied by: " + collider.name);
                     break;
                 }
             }
-            
-            if (positionOccupied)
-            {
-                Debug.Log("Position already occupied");
-                return;
-            }
-            
-            // Check all existing cubes
-            foreach (GameObject cube in manager.GetAllCubes())
-            {
-                if (cube == null) continue;
-                
-                Vector3 cubePos = new Vector3(
-                    Mathf.Round(cube.transform.position.x),
-                    Mathf.Round(cube.transform.position.y),
-                    Mathf.Round(cube.transform.position.z)
-                );
-                
-                // Check if the touch position is adjacent to this cube
-                if (Vector3.Distance(touchGridPos, cubePos) < 1.1f) // Slightly more than 1 to account for floating point errors
-                {
-                    isAdjacentToAnyCube = true;
-                    break;
-                }
-            }
-            
-            if (!isAdjacentToAnyCube)
-            {
-                Debug.Log("Can only place cubes adjacent to existing cubes");
-                return;
-            }
-            
-            // If we got here, the position is valid - spawn the cube
-            SpawnCube(manager, spawnPosition, false);
-            Debug.Log($"Placed adjacent cube at {spawnPosition}");
         }
+            
+        if (positionOccupied)
+        {
+            Debug.Log("Position already occupied - aborting");
+            return;
+        }
+        
+        Debug.Log("Position is free. Checking adjacency...");
+            
+        // Check all existing cubes
+        foreach (GameObject cube in cubesManager.GetAllCubes())
+        {
+            if (cube == null) continue;
+            
+            Vector3 cubePos = new Vector3(
+                Mathf.Round(cube.transform.position.x),
+                Mathf.Round(cube.transform.position.y),
+                Mathf.Round(cube.transform.position.z)
+            );
+            
+            // Calculate the distance on each axis
+            float xDist = Mathf.Abs(touchGridPos.x - cubePos.x);
+            float yDist = Mathf.Abs(touchGridPos.y - cubePos.y);
+            float zDist = Mathf.Abs(touchGridPos.z - cubePos.z);
+            
+            // Cubes are adjacent if they share two coordinates and the third differs by exactly 1
+            int matchingAxes = 0;
+            int differentByOne = 0;
+            
+            if (Mathf.Approximately(xDist, 0f)) matchingAxes++;
+            else if (Mathf.Approximately(xDist, 1f)) differentByOne++;
+            
+            if (Mathf.Approximately(yDist, 0f)) matchingAxes++;
+            else if (Mathf.Approximately(yDist, 1f)) differentByOne++;
+            
+            if (Mathf.Approximately(zDist, 0f)) matchingAxes++;
+            else if (Mathf.Approximately(zDist, 1f)) differentByOne++;
+            
+            // If two axes match and one differs by 1, they're adjacent
+            if (matchingAxes == 2 && differentByOne == 1)
+            {
+                isAdjacentToAnyCube = true;
+                Debug.Log($"Adjacent to cube at {cubePos} (touch at {touchGridPos})");
+                break;
+            }
+        }
+        
+        if (!isAdjacentToAnyCube)
+        {
+            Debug.Log("Can only place cubes adjacent to existing cubes");
+            return;
+        }
+        
+        Debug.Log("Position is valid and adjacent. Spawning cube at: " + spawnPosition);
+        SpawnCube(cubesManager, spawnPosition, false);
+        Debug.Log($"Successfully placed adjacent cube at {spawnPosition}");
     }
     
-    private void SpawnCube(ConnectedCubesManager manager, Vector3 position, bool isFirstCube)
+    void SpawnCube(ConnectedCubesManager manager, Vector3 position, bool isFirstCube)
     {
-        // Instantiate the prefab at the calculated position
-        GameObject newCube = Instantiate(prefabToSpawn, position, Quaternion.identity);
-        
-        // Set initial color to gray
-        Renderer cubeRenderer = newCube.GetComponent<Renderer>();
-        if (cubeRenderer != null)
+        if (prefabToSpawn == null)
         {
-            cubeRenderer.material.color = Color.gray;
+            Debug.LogError("Cannot spawn cube: prefabToSpawn is not assigned in the inspector!");
+            return;
         }
+
+        if (manager == null)
+        {
+            Debug.LogError("Cannot spawn cube: ConnectedCubesManager is null!");
+            return;
+        }
+
+        Debug.Log($"Attempting to spawn cube at {position} (first cube: {isFirstCube})");
         
-        // Register the new cube with the manager
-        manager.RegisterCube(newCube, isFirstCube);
-        
-        Debug.Log("Spawned " + prefabToSpawn.name + " at " + position);
+        try
+        {
+            // Instantiate the prefab at the calculated position
+            GameObject newCube = Instantiate(prefabToSpawn, position, Quaternion.identity);
+            
+            if (newCube == null)
+            {
+                Debug.LogError("Failed to instantiate cube prefab!");
+                return;
+            }
+            
+            // Set initial color to gray
+            Renderer cubeRenderer = newCube.GetComponent<Renderer>();
+            if (cubeRenderer != null)
+            {
+                cubeRenderer.material.color = Color.gray;
+            }
+            else
+            {
+                Debug.LogWarning("New cube has no Renderer component!");
+            }
+            
+            // Register the new cube with the manager
+            manager.RegisterCube(newCube, isFirstCube);
+            
+            Debug.Log($"Successfully spawned {prefabToSpawn.name} at {position}");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"Error spawning cube: {e.Message}");
+            Debug.LogException(e);
+        }
     }
     
 }
