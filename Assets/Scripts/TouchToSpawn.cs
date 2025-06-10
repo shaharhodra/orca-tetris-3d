@@ -9,6 +9,9 @@ public class TouchToSpawn : MonoBehaviour
     [Tooltip("The prefab to instantiate when touching an object with the specified tag")]
     public GameObject prefabToSpawn;
     
+    [Tooltip("List of possible shapes to spawn randomly")]
+    public GameObject[] randomShapes;
+    
     [Tooltip("The tag of the object that can be touched to spawn the prefab")]
     public string touchableTag = "Touchable";
     
@@ -123,21 +126,31 @@ public class TouchToSpawn : MonoBehaviour
         
         Debug.Log("Timer finished, grouping cubes");
         isTimerRunning = false;
-        canSpawn = false;  // Disable spawning when time's up
         
-        if (countdownText != null)
+        // Check if any cubes were placed
+        if (cubesManager != null && cubesManager.GetCubeCount() == 0)
         {
-            countdownText.text = "Time's Up!";
-        }
-        
-        // Notify ConnectedCubesManager that time is up
-        if (cubesManager != null)
-        {
-            cubesManager.OnGameTimeEnded();
+            // No cubes placed, spawn a random shape
+            SpawnRandomShape();
         }
         else
         {
-            Debug.LogError("No ConnectedCubesManager found!");
+            canSpawn = false;  // Disable spawning when time's up
+            
+            if (countdownText != null)
+            {
+                countdownText.text = "Time's Up!";
+            }
+            
+            // Notify ConnectedCubesManager that time is up
+            if (cubesManager != null)
+            {
+                cubesManager.OnGameTimeEnded();
+            }
+            else
+            {
+                Debug.LogError("No ConnectedCubesManager found!");
+            }
         }
     }
     
@@ -309,6 +322,38 @@ public class TouchToSpawn : MonoBehaviour
         Debug.Log("Position is valid and adjacent. Spawning cube at: " + spawnPosition);
         SpawnCube(cubesManager, spawnPosition, false);
         Debug.Log($"Successfully placed adjacent cube at {spawnPosition}");
+    }
+    
+    void SpawnRandomShape()
+    {
+        if (randomShapes == null || randomShapes.Length == 0)
+        {
+            Debug.LogError("No random shapes assigned in the inspector!");
+            return;
+        }
+        
+        // Select a random shape from the array
+        int randomIndex = Random.Range(0, randomShapes.Length);
+        GameObject randomShapePrefab = randomShapes[randomIndex];
+        
+        // Spawn the shape at position (0, 10, 0) to make it fall from above
+        Vector3 spawnPosition = new Vector3(0, 10, 0);
+        
+        // Instantiate the shape
+        GameObject newShape = Instantiate(randomShapePrefab, spawnPosition, Quaternion.identity);
+        
+        // Make sure it has a CubeShape component
+        CubeShape cubeShape = newShape.GetComponent<CubeShape>();
+        if (cubeShape == null)
+        {
+            cubeShape = newShape.AddComponent<CubeShape>();
+        }
+        
+        // Initialize the shape
+        cubeShape.shouldStartFalling = true;
+        
+        // Reset the timer for the next shape
+        StartCountdown();
     }
     
     void SpawnCube(ConnectedCubesManager manager, Vector3 position, bool isFirstCube)

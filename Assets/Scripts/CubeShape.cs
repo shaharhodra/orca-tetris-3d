@@ -29,7 +29,8 @@ public class CubeShape : MonoBehaviour
     private Vector3 targetPosition;
     private bool isMoving = false;
     private bool canFall = false;
-    private bool shouldStartFalling = false;
+    [HideInInspector]
+    public bool shouldStartFalling = false;
     private ConnectedCubesManager cubesManager;
     
 
