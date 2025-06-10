@@ -10,6 +10,11 @@ public class CubeShape : MonoBehaviour
     [Tooltip("Distance to move down each step")]
     public float stepSize = 1f;
     
+    [Tooltip("Speed multiplier when spacebar is pressed")]
+    public float speedBoostMultiplier = 3f;
+    
+    private bool isSpeedBoosted = false;
+    
     [Tooltip("Time in seconds before starting to fall")]
     public float startDelay = 1.0f;
     
@@ -127,6 +132,18 @@ public class CubeShape : MonoBehaviour
     {
         if (isGrounded) return;
         
+        // Check for spacebar press to speed up falling
+        if (Input.GetKeyDown(KeyCode.Space) && !isSpeedBoosted)
+        {
+            isSpeedBoosted = true;
+            fallInterval /= speedBoostMultiplier; // Reduce the interval to make it fall faster
+        }
+        else if (Input.GetKeyUp(KeyCode.Space) && isSpeedBoosted)
+        {
+            isSpeedBoosted = false;
+            fallInterval *= speedBoostMultiplier; // Reset to normal speed
+        }
+        
         // For the group, we don't need to wait for timer
         if (!shouldStartFalling) return;
         
@@ -146,7 +163,8 @@ public class CubeShape : MonoBehaviour
             if (isMoving)
             {
                 // Move the entire group
-                transform.position = Vector3.MoveTowards(transform.position, targetPosition, Time.deltaTime * 10f);
+                float moveSpeed = isSpeedBoosted ? 20f : 10f; // Faster movement when speed boosted
+                transform.position = Vector3.MoveTowards(transform.position, targetPosition, Time.deltaTime * moveSpeed);
                 
                 // Check if we've reached the target position
                 if (Vector3.Distance(transform.position, targetPosition) < 0.01f)
