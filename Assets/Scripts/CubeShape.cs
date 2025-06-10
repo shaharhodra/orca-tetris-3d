@@ -13,7 +13,13 @@ public class CubeShape : MonoBehaviour
     [Tooltip("Speed multiplier when spacebar is pressed")]
     public float speedBoostMultiplier = 3f;
     
+    [Tooltip("Movement step size for left/right movement")]
+    public float moveStep = 1f;
+    
     private bool isSpeedBoosted = false;
+    private float moveCooldown = 0.1f; // Cooldown between moves in seconds
+    private float moveTimer = 0f;
+    private bool canMove = true;
     
     [Tooltip("Time in seconds before starting to fall")]
     public float startDelay = 1.0f;
@@ -132,6 +138,32 @@ public class CubeShape : MonoBehaviour
     {
         if (isGrounded) return;
         
+        // Handle movement cooldown
+        if (!canMove)
+        {
+            moveTimer += Time.deltaTime;
+            if (moveTimer >= moveCooldown)
+            {
+                canMove = true;
+                moveTimer = 0f;
+            }
+        }
+        
+        // Handle horizontal movement
+        if (canMove)
+        {
+            if (Input.GetKey(KeyCode.LeftArrow))
+            {
+                TryMoveHorizontal(-moveStep);
+                canMove = false;
+            }
+            else if (Input.GetKey(KeyCode.RightArrow))
+            {
+                TryMoveHorizontal(moveStep);
+                canMove = false;
+            }
+        }
+        
         // Check for spacebar press to speed up falling
         if (Input.GetKeyDown(KeyCode.Space) && !isSpeedBoosted)
         {
@@ -181,6 +213,51 @@ public class CubeShape : MonoBehaviour
                 }
             }
         }
+    }
+    
+    void TryMoveHorizontal(float direction)
+    {
+        // Calculate the movement vector
+        Vector3 movement = new Vector3(direction, 0, 0);
+        
+        // Check if the movement is valid (no collisions)
+        if (CanMoveInDirection(movement))
+        {
+            // Move the entire group
+            transform.position += movement;
+            // Also move the target position to prevent snapping back
+            targetPosition += movement;
+        }
+    }
+    
+    bool CanMoveInDirection(Vector3 direction)
+    {
+        // Check each child cube to see if it can move in the given direction
+        foreach (Transform child in transform)
+        {
+            Collider childCollider = child.GetComponent<Collider>();
+            if (childCollider == null) continue;
+            
+            // Calculate the position to check
+            Vector3 checkPos = child.position + direction;
+            
+            // Check for any colliders at the target position (except other cubes in the same group)
+            Collider[] colliders = Physics.OverlapBox(
+                checkPos, 
+                childCollider.bounds.extents * 0.9f, // Slightly smaller to prevent edge cases
+                child.rotation,
+                ~LayerMask.GetMask("Ignore Raycast")
+            );
+            
+            foreach (var collider in colliders)
+            {
+                if (collider != null && !collider.transform.IsChildOf(transform))
+                {
+                    return false; // Can't move here, there's something in the way
+                }
+            }
+        }
+        return true; // No obstacles found, can move
     }
     
     bool IsGrounded()
