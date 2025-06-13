@@ -165,11 +165,9 @@ public class TouchToSpawn : MonoBehaviour
         }
         
         // Reset the timer
-        StartCountdown();
-        
-        // Enable spawning for new shape
-        canSpawn = true;
+        currentTime = countdownDuration;
         isTimerRunning = true;
+        canSpawn = true;
         
         if (countdownText != null)
         {
