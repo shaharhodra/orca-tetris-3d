@@ -174,9 +174,58 @@ public class CubeShape : MonoBehaviour
         }
     }
     
+    private bool CheckGroundBelow()
+    {
+        // Check if there's ground directly below any child cube
+        foreach (Transform child in transform)
+        {
+            RaycastHit hit;
+            float rayLength = 1.1f; // Slightly more than 1 unit
+            Vector3 rayStart = child.position;
+            
+            // Cast a ray downward from the bottom of the cube
+            if (Physics.Raycast(rayStart, Vector3.down, out hit, rayLength))
+            {
+                // If we hit something that's not part of this shape
+                if (hit.collider != null && hit.collider.transform != child && !hit.collider.transform.IsChildOf(transform))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    
     void Update()
     {
-        if (isGrounded) return;
+        if (isGrounded) 
+        {
+            return;
+        }
+        
+        // Check if we've hit the ground or another shape below us
+        if (CheckGroundBelow())
+        {
+            isGrounded = true;
+            
+            // Notify the parent group that we've landed
+            if (cubesManager != null)
+            {
+                cubesManager.OnShapeLanded?.Invoke();
+            }
+            
+            // Reset the timer through TouchToSpawn
+            if (touchToSpawn == null)
+            {
+                touchToSpawn = FindObjectOfType<TouchToSpawn>();
+            }
+            
+            if (touchToSpawn != null)
+            {
+                touchToSpawn.ResetTimer();
+            }
+            return;
+        }
         
         // Handle movement cooldown
         if (!canMove)
