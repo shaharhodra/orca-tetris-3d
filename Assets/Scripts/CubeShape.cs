@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 public class CubeShape : MonoBehaviour
 {
@@ -62,18 +63,23 @@ public class CubeShape : MonoBehaviour
 
     void Start()
     {
-        // Check if this is the group parent (has children)
-        if (transform.childCount > 0)
+        // Always initialize for group behavior
+        InitializeGroupBehavior();
+        
+        // Find the TetrisShapeSpawner if it exists
+        if (FindObjectOfType<TetrisShapeSpawner>() == null)
         {
-            // This is the group parent, initialize for group behavior
-            InitializeGroupBehavior();
+            Debug.LogWarning("TetrisShapeSpawner not found in the scene. Make sure to add it to spawn Tetris shapes.");
         }
-        else
-        {
-            // This is an individual cube, disable this component
-            enabled = false;
-            return;
-        }
+    }
+    
+    public void StartFalling()
+    {
+        Debug.Log("Starting to fall");
+        canFall = true;
+        shouldStartFalling = true;
+        isGrounded = false;
+        timer = 0f;
     }
     
     private void InitializeGroupBehavior()
@@ -103,11 +109,15 @@ public class CubeShape : MonoBehaviour
             }
             
             // Make sure the child has a rigidbody for physics
-            if (child.GetComponent<Rigidbody>() == null)
+            Rigidbody childRb = child.GetComponent<Rigidbody>();
+            if (childRb == null)
             {
-                Rigidbody childRb = child.gameObject.AddComponent<Rigidbody>();
-                childRb.isKinematic = true; // We'll handle movement manually
+                childRb = child.gameObject.AddComponent<Rigidbody>();
             }
+            // Configure rigidbody for better collision detection
+            childRb.isKinematic = true;
+            childRb.useGravity = false;
+            childRb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
         }
         
         // Initialize target position
@@ -124,14 +134,43 @@ public class CubeShape : MonoBehaviour
     
     private void OnShapeLanded()
     {
+        Debug.Log("OnShapeLanded called");
+        
+        if (isGrounded) 
+        {
+            Debug.Log("Already grounded, ignoring");
+            return; // Prevent multiple landings
+        }
+        
         isGrounded = true;
-        // Group falling is now handled by the parent object
-        Debug.Log("Shape landed");
+        Debug.Log("Shape marked as landed");
         
         // Notify the parent group that we've landed
         if (cubesManager != null)
         {
+            Debug.Log("Notifying cubes manager");
             cubesManager.OnShapeLanded?.Invoke();
+        }
+        else
+        {
+            Debug.LogWarning("cubesManager is null!");
+        }
+        
+        // Reset the timer through TouchToSpawn
+        if (touchToSpawn == null)
+        {
+            Debug.Log("Finding TouchToSpawn...");
+            touchToSpawn = FindObjectOfType<TouchToSpawn>();
+        }
+        
+        if (touchToSpawn != null)
+        {
+            Debug.Log("Resetting timer");
+            touchToSpawn.ResetTimer();
+        }
+        else
+        {
+            Debug.LogError("TouchToSpawn not found in scene!");
         }
     }
     
@@ -261,84 +300,70 @@ public class CubeShape : MonoBehaviour
         return true; // No obstacles found, can move
     }
     
+    private HashSet<Collider> currentCollisions = new HashSet<Collider>();
+    
+    void OnCollisionEnter(Collision collision)
+    {
+        // Ignore collisions with other cubes in the same shape
+        if (collision.transform.IsChildOf(transform)) return;
+        
+        // Check if we already processed this collision
+        if (!currentCollisions.Contains(collision.collider))
+        {
+            currentCollisions.Add(collision.collider);
+            Debug.Log($"Collision with {collision.gameObject.name}");
+            
+            // Stop the shape and reset the timer on any collision
+            OnShapeLanded();
+        }
+    }
+    
+    void OnCollisionExit(Collision collision)
+    {
+        if (currentCollisions.Contains(collision.collider))
+        {
+            currentCollisions.Remove(collision.collider);
+        }
+    }
+    
     bool IsGrounded()
     {
-        // Check if any child cube is touching the ground or another object
+        // Simply check if we have any active collisions
+        return currentCollisions.Count > 0;
+    }
+    
+    // Helper method to find the lowest point of the shape
+    float GetLowestPoint()
+    {
+        float lowestPoint = float.MaxValue;
         foreach (Transform child in transform)
         {
-            Collider childCollider = child.GetComponent<Collider>();
-            if (childCollider == null) continue;
+            if (child == null) continue;
+            Collider col = child.GetComponent<Collider>();
+            if (col == null) continue;
             
-            // Cast a ray down from the bottom of the cube
-            Vector3 rayStart = child.position - new Vector3(0, childCollider.bounds.extents.y, 0);
-            float rayLength = 0.2f; // Small distance to check for ground
-            
-            // Check for any colliders below this cube (except other cubes in the same group)
-            RaycastHit[] hits = Physics.RaycastAll(rayStart, Vector3.down, rayLength, ~LayerMask.GetMask("Ignore Raycast"));
-            foreach (var hit in hits)
+            float childBottom = child.position.y - col.bounds.extents.y;
+            if (childBottom < lowestPoint)
             {
-                if (hit.collider != null && !hit.transform.IsChildOf(transform))
-                {
-                    return true;
-                }
+                lowestPoint = childBottom;
             }
         }
-        
-        return false;
+        return lowestPoint;
     }
     
     void TryMoveDown()
     {
-        // Check if any child cube would hit something if we move down
-        bool wouldHit = false;
-        float minDistance = float.MaxValue;
+        Debug.Log($"Trying to move down from position: {transform.position}");
         
-        // Check each child cube
-        foreach (Transform child in transform)
+        // If we already have active collisions, we're grounded
+        if (currentCollisions.Count > 0)
         {
-            Collider childCollider = child.GetComponent<Collider>();
-            if (childCollider == null) continue;
-            
-            // Calculate ray start at the bottom of the cube
-            Vector3 rayStart = child.position - new Vector3(0, childCollider.bounds.extents.y, 0);
-            float rayLength = stepSize + 0.1f; // Small offset to detect surfaces just below
-            
-            // Cast a ray down from the bottom of this cube
-            RaycastHit hit;
-            if (Physics.Raycast(rayStart, Vector3.down, out hit, rayLength, ~LayerMask.GetMask("Ignore Raycast")))
-            {
-                // Ignore hits with other cubes in the same group
-                if (hit.transform.IsChildOf(transform)) continue;
-                
-                wouldHit = true;
-                float distance = hit.distance;
-                if (distance < minDistance)
-                {
-                    minDistance = distance;
-                }
-            }
+            OnShapeLanded();
+            return;
         }
         
-        if (wouldHit)
-        {
-            // Move down until we hit something
-            float moveDistance = minDistance - 0.1f; // Small offset to prevent sinking
-            if (moveDistance > 0)
-            {
-                targetPosition = transform.position + Vector3.down * moveDistance;
-                isMoving = true;
-            }
-            else
-            {
-                // We're already touching something below
-                OnShapeLanded();
-            }
-        }
-        else
-        {
-            // No surface detected, move down normally
-            targetPosition = transform.position + Vector3.down * stepSize;
-            isMoving = true;
-        }
+        // Otherwise, move down by step size
+        targetPosition = transform.position + Vector3.down * stepSize;
+        isMoving = true;
     }
 }

@@ -55,9 +55,33 @@ public class ConnectedCubesManager : MonoBehaviour
         return new List<GameObject>(allCubes);
     }
     
-    public void ClearAllCubes()
+    public bool IsPositionOccupied(Vector3 position)
+    {
+        foreach (GameObject cube in allCubes)
+        {
+            if (cube != null && Vector3.Distance(cube.transform.position, position) < 0.1f)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    public void ClearAllCubes(bool clearAll = true)
     {
         Debug.Log("Resetting cube manager for new shape");
+        
+        if (clearAll)
+        {
+            // Clear all cubes
+            foreach (GameObject cube in allCubes)
+            {
+                if (cube != null)
+                {
+                    Destroy(cube);
+                }
+            }
+        }
         
         // Create a new list for the next shape
         allCubes = new List<GameObject>();

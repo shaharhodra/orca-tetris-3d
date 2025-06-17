@@ -9,9 +9,6 @@ public class TouchToSpawn : MonoBehaviour
     [Tooltip("The prefab to instantiate when touching an object with the specified tag")]
     public GameObject prefabToSpawn;
     
-    [Tooltip("List of possible shapes to spawn randomly")]
-    public GameObject[] randomShapes;
-    
     [Tooltip("The tag of the object that can be touched to spawn the prefab")]
     public string touchableTag = "Touchable";
     
@@ -24,6 +21,7 @@ public class TouchToSpawn : MonoBehaviour
     
     [Tooltip("Text component to display the countdown")]
     public TMP_Text countdownText;
+    public Countdown3DDisplay countdown3DDisplay;  // Reference to the 3D countdown display
     
     private float currentTime;
     private bool isTimerRunning = false;
@@ -65,10 +63,17 @@ public class TouchToSpawn : MonoBehaviour
             // Update the timer
             currentTime -= Time.deltaTime;
             
-            // Update the countdown text
-            if (countdownText != null)
+            // Update the countdown display
+            int countdownValue = Mathf.CeilToInt(currentTime);
+            
+            if (countdown3DDisplay != null)
             {
-                countdownText.text = Mathf.CeilToInt(currentTime).ToString();
+                countdown3DDisplay.ShowNumber(countdownValue);
+            }
+            else if (countdownText != null)
+            {
+                countdownText.gameObject.SetActive(true);
+                countdownText.text = countdownValue.ToString();
             }
             
             // Check if timer has finished
@@ -105,12 +110,18 @@ public class TouchToSpawn : MonoBehaviour
         currentTime = countdownDuration;
         isTimerRunning = true;
         canSpawn = true;
-        canSpawn = true;  // Enable spawning when countdown starts
         
-        if (countdownText != null)
+        int countdownValue = Mathf.CeilToInt(currentTime);
+        
+        if (countdown3DDisplay != null)
+        {
+            countdown3DDisplay.gameObject.SetActive(true);
+            countdown3DDisplay.ShowNumber(countdownValue);
+        }
+        else if (countdownText != null)
         {
             countdownText.gameObject.SetActive(true);
-            countdownText.text = Mathf.CeilToInt(currentTime).ToString();
+            countdownText.text = countdownValue.ToString();
         }
     }
     
@@ -120,65 +131,128 @@ public class TouchToSpawn : MonoBehaviour
         return isTimerRunning;
     }
     
+    public void StopTimer()
+    {
+        isTimerRunning = false;
+        canSpawn = false;
+        if (countdownText != null) countdownText.text = "Timer Stopped";
+    }
+    
+    public void ResetTimer()
+    {
+        // Stop any existing timer
+        CancelInvoke("StartCountdown");
+        
+        // Reset the timer state
+        isTimerRunning = false;
+        canSpawn = false;
+        
+        // Start a new countdown after a short delay
+        Invoke("StartCountdown", 1f);
+        
+        Debug.Log("Timer reset - new countdown starting soon");
+    }
+    
     private void TimerFinished()
     {
         if (!isTimerRunning) return; // Prevent multiple triggers
         
-        Debug.Log("Timer finished, grouping cubes");
+        Debug.Log("Timer finished, finalizing player shape or spawning random shape");
         isTimerRunning = false;
         
-        // Check if any cubes were placed
-        if (cubesManager != null && cubesManager.GetCubeCount() == 0)
+        // Check if player has placed any cubes
+        if (cubesManager != null && cubesManager.GetCubeCount() > 0)
         {
-            // No cubes placed, spawn a random shape
-            SpawnRandomShape();
+            // Player has drawn a shape - group it and make it fall
+            FinalizePlayerShape();
         }
         else
         {
-            canSpawn = false;  // Disable spawning when time's up
-            
-            if (countdownText != null)
+            // Player didn't draw anything - spawn a random shape
+            TetrisShapeSpawner shapeSpawner = FindObjectOfType<TetrisShapeSpawner>();
+            if (shapeSpawner != null)
             {
-                countdownText.text = "Time's Up!";
-            }
-            
-            // Notify ConnectedCubesManager that time is up
-            if (cubesManager != null)
-            {
-                cubesManager.OnGameTimeEnded();
+                shapeSpawner.SpawnNewShape();
+                
+                if (countdownText != null)
+                {
+                    countdownText.text = "Shape Spawned!";
+                }
             }
             else
             {
-                Debug.LogError("No ConnectedCubesManager found!");
+                Debug.LogError("TetrisShapeSpawner not found in the scene!");
             }
         }
     }
     
-    private void OnShapeLanded()
+    private void FinalizePlayerShape()
     {
-        Debug.Log("Shape landed, preparing for new shape");
+        Debug.Log("Finalizing player shape");
         
-        // Reset the manager for new shape
-        if (cubesManager != null)
+        // Create a parent object for the shape
+        GameObject shapeParent = new GameObject("PlayerShape");
+        CubeShape cubeShape = shapeParent.AddComponent<CubeShape>();
+        cubeShape.shouldStartFalling = true;
+        
+        // Get all cubes from the manager and parent them to the shape
+        var cubes = cubesManager.GetAllCubes();
+        foreach (GameObject cube in cubes)
         {
-            cubesManager.ClearAllCubes();
+            if (cube != null)
+            {
+                cube.transform.SetParent(shapeParent.transform);
+                // Change color to indicate it's now a falling shape
+                Renderer renderer = cube.GetComponent<Renderer>();
+                if (renderer != null)
+                {
+                    renderer.material.color = Color.blue; // Or any color you prefer
+                }
+            }
         }
         
-        // Reset the timer
+        // Clear the manager for new shapes
+        cubesManager.ClearAllCubes(false);
+        
+        // Start the shape falling
+        cubeShape.StartFalling();
+        
+        if (countdownText != null)
+        {
+            countdownText.text = "Shape Falling!";
+        }
+    }
+    
+    public void OnShapeLanded()
+    {
+        Debug.Log("Shape landed - resetting timer and enabling spawning");
+        
+        // Reset the timer immediately
         currentTime = countdownDuration;
         isTimerRunning = true;
         canSpawn = true;
         
+        // Update the UI
         if (countdownText != null)
         {
+            countdownText.gameObject.SetActive(true);
             countdownText.text = Mathf.CeilToInt(currentTime).ToString();
         }
+        
+        Debug.Log("Timer reset and ready for next shape");
     }
     
     // Handle both touch and mouse input for spawning
     private void HandleSpawnInput(Vector2 screenPosition)
     {
         Debug.Log("HandleSpawnInput called");
+        
+        // Check if we can spawn new cubes
+        if (!canSpawn || !isTimerRunning)
+        {
+            Debug.Log("Cannot spawn right now - waiting for timer or shape to land");
+            return;
+        }
         
         // Create a ray from the screen position
         Ray ray = Camera.main.ScreenPointToRay(screenPosition);
@@ -210,23 +284,26 @@ public class TouchToSpawn : MonoBehaviour
             return;
         }
 
-        int cubeCount = cubesManager.GetCubeCount();
-        Debug.Log("Current cube count: " + cubeCount);
-
-        // If there are no cubes yet, allow placing the first cube anywhere
-        if (cubeCount == 0)
+        // Calculate grid position
+        Vector3 gridPosition = hit.point + spawnOffset;
+        gridPosition = new Vector3(
+            Mathf.Round(gridPosition.x),
+            Mathf.Round(gridPosition.y),
+            Mathf.Round(gridPosition.z)
+        );
+        
+        // Check if position is already occupied
+        if (cubesManager.IsPositionOccupied(gridPosition))
         {
-            Debug.Log("Placing first cube");
-            // Instantiate the first cube at the hit point
-            Vector3 firstCubePosition = hit.point + spawnOffset;
-            // Round to nearest whole number for grid alignment
-            firstCubePosition = new Vector3(
-                Mathf.Round(firstCubePosition.x),
-                Mathf.Round(firstCubePosition.y),
-                Mathf.Round(firstCubePosition.z)
-            );
-            Debug.Log("First cube position: " + firstCubePosition);
-            SpawnCube(cubesManager, firstCubePosition, true);
+            Debug.Log("Position already occupied");
+            return;
+        }
+        
+        // If there are no cubes yet, allow placing the first cube
+        if (cubesManager.GetCubeCount() == 0)
+        {
+            Debug.Log("Placing first cube at " + gridPosition);
+            SpawnCube(cubesManager, gridPosition, true);
             return;
         }
 
@@ -239,10 +316,27 @@ public class TouchToSpawn : MonoBehaviour
         
         Debug.Log("Touch grid position: " + touchGridPos);
         
+        // Find the active shape (if any)
+        CubeShape activeShape = FindObjectOfType<CubeShape>();
+        
         // Check all existing cubes to see if the touch is adjacent to any of them
         bool isAdjacentToAnyCube = false;
         bool positionOccupied = false;
         Vector3 spawnPosition = touchGridPos;
+        
+        // If we have an active shape, use it as the parent for new cubes
+        if (activeShape != null)
+        {
+            // Check if the position is already occupied by a child of the active shape
+            foreach (Transform child in activeShape.transform)
+            {
+                if (Vector3.Distance(child.position, spawnPosition) < 0.1f)
+                {
+                    positionOccupied = true;
+                    break;
+                }
+            }
+        }
         
         Debug.Log("Checking position occupation...");
             
@@ -318,33 +412,51 @@ public class TouchToSpawn : MonoBehaviour
         }
         
         Debug.Log("Position is valid and adjacent. Spawning cube at: " + spawnPosition);
-        SpawnCube(cubesManager, spawnPosition, false);
-        Debug.Log($"Successfully placed adjacent cube at {spawnPosition}");
+        
+        // If we have an active shape, parent the new cube to it
+        if (activeShape != null)
+        {
+            // Spawn the cube as a child of the active shape
+            GameObject newCube = Instantiate(prefabToSpawn, spawnPosition, Quaternion.identity, activeShape.transform);
+            
+            // Set initial color to match the shape
+            Renderer cubeRenderer = newCube.GetComponent<Renderer>();
+            if (cubeRenderer != null)
+            {
+                cubeRenderer.material.color = Color.gray;
+            }
+            
+            // Register the cube with the manager
+            cubesManager.RegisterCube(newCube, false);
+            Debug.Log($"Successfully placed adjacent cube at {spawnPosition} as part of existing shape");
+        }
+        else
+        {
+            // If no active shape, spawn a new one with this cube
+            SpawnCube(cubesManager, spawnPosition, true);
+            Debug.Log($"Successfully started new shape at {spawnPosition}");
+        }
     }
     
-    void SpawnRandomShape()
+    void SpawnCubeFromTop()
     {
-        if (randomShapes == null || randomShapes.Length == 0)
+        if (prefabToSpawn == null)
         {
-            Debug.LogError("No random shapes assigned in the inspector!");
+            Debug.LogError("No prefab assigned in the inspector!");
             return;
         }
         
-        // Select a random shape from the array
-        int randomIndex = Random.Range(0, randomShapes.Length);
-        GameObject randomShapePrefab = randomShapes[randomIndex];
-        
-        // Spawn the shape at position (0, 10, 0) to make it fall from above
+        // Spawn the cube at position (0, 10, 0) to make it fall from above
         Vector3 spawnPosition = new Vector3(0, 10, 0);
         
-        // Instantiate the shape
-        GameObject newShape = Instantiate(randomShapePrefab, spawnPosition, Quaternion.identity);
+        // Instantiate the cube
+        GameObject newCube = Instantiate(prefabToSpawn, spawnPosition, Quaternion.identity);
         
         // Make sure it has a CubeShape component
-        CubeShape cubeShape = newShape.GetComponent<CubeShape>();
+        CubeShape cubeShape = newCube.GetComponent<CubeShape>();
         if (cubeShape == null)
         {
-            cubeShape = newShape.AddComponent<CubeShape>();
+            cubeShape = newCube.AddComponent<CubeShape>();
         }
         
         // Initialize the shape
