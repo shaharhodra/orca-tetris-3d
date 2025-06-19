@@ -8,13 +8,35 @@ public class TetrisShapeSpawner : MonoBehaviour
     public Transform spawnPoint;
     public float spawnDelay = 1f;
     
+    [Header("Spawn Position")]
+    [Tooltip("If true, shapes will be centered around spawn point. If false, they'll start from the spawn point.")]
+    public bool centerShapes = true;
+    [Tooltip("If true, shapes will be aligned to grid.")]
+    public bool snapToGrid = true;
+    [Tooltip("Grid size for snapping. Only used if snapToGrid is true.")]
+    public float gridSize = 1.0f;
+    
     [Header("Shape Settings")]
     public int maxWidth = 7;
     public int maxHeight = 4;
     public float cubeSize = 1f;
-    public int minShapesInGroup = 2;
-    public int maxShapesInGroup = 4;
-    public float shapeSpacing = 2f; // Space between shapes in the group
+    [Tooltip("Number of cubes in the shape (2-4)")]
+    public int cubesInShape = 3; // Number of cubes in a single shape
+    
+    [Header("Color Settings")]
+    [Tooltip("Possible colors for the shapes")]
+    public Color[] possibleColors = new Color[]
+    {
+        Color.red,
+        Color.blue,
+        Color.green,
+        Color.yellow,
+        Color.cyan,
+        Color.magenta
+    };
+    
+    [Tooltip("Color for player-created shapes")]
+    public Color playerShapeColor = Color.white;
     
     private List<GameObject> currentShape = new List<GameObject>();
     private TouchToSpawn touchToSpawn;
@@ -39,64 +61,63 @@ public class TetrisShapeSpawner : MonoBehaviour
     
     public void SpawnNewShape()
     {
-        Debug.Log("Spawning new shape group...");
+        Debug.Log("Spawning new shape...");
         
-        // Create the group parent object
-        GameObject groupParent = new GameObject("ShapeGroup_" + System.Guid.NewGuid().ToString("N").Substring(0, 8));
-        groupParent.transform.position = spawnPoint.position;
+        // Create the shape parent object
+        GameObject shapeParent = new GameObject("TetrisShape_" + System.Guid.NewGuid().ToString("N").Substring(0, 8));
         
-        // Determine how many shapes to create in this group
-        int numShapes = Random.Range(minShapesInGroup, maxShapesInGroup + 1);
-        Debug.Log($"Creating {numShapes} shapes in group");
-        float totalWidth = 0f;
+        // Calculate spawn position
+        Vector3 spawnPosition = spawnPoint.position;
         
-        // Create multiple shapes in the group
-        for (int i = 0; i < numShapes; i++)
+        // Snap to grid if enabled
+        if (snapToGrid)
         {
-            // Generate a random shape
-            bool[,] shape = GenerateRandomShape();
-            
-            // Create a parent for this shape at the exact spawn point
-            GameObject shapeParent = new GameObject($"TetrisShape_{i}");
-            shapeParent.transform.position = spawnPoint.position; // Set exact spawn position
-            shapeParent.transform.SetParent(groupParent.transform);
-            
-
-            
-            // Calculate position for this shape in the group
-            float shapeWidth = maxWidth * cubeSize;
-            float xPos = totalWidth + (i * (shapeWidth + shapeSpacing));
-            
-            // Create cubes based on the shape
-            for (int y = 0; y < maxHeight; y++)
-            {
-                for (int x = 0; x < maxWidth; x++)
-                {
-                    if (shape[x, y])
-                    {
-                        // Calculate local position relative to shape center
-                        Vector3 localPos = new Vector3(
-                            (x - maxWidth/2f) * cubeSize,
-                            (-y + maxHeight/2f) * cubeSize,
-                            0);
-                            
-                        // Create cube at calculated local position
-                        GameObject cube = Instantiate(cubePrefab, Vector3.zero, Quaternion.identity, shapeParent.transform);
-                        cube.transform.localPosition = localPos;
-                        currentShape.Add(cube);
-                    }
-                }
-            }
-            
-            // Update total width for next shape
-            totalWidth += shapeWidth + shapeSpacing;
+            spawnPosition.x = Mathf.Round(spawnPosition.x / gridSize) * gridSize;
+            spawnPosition.y = Mathf.Round(spawnPosition.y / gridSize) * gridSize;
         }
         
-        // Center the group horizontally around spawn point
-        groupParent.transform.position = spawnPoint.position - new Vector3(totalWidth / 2, 0, 0);
+        // Set the shape position
+        shapeParent.transform.position = spawnPosition;
         
-        // Add CubeShape component to the group parent
-        CubeShape cubeShape = groupParent.AddComponent<CubeShape>();
+        // Generate a random shape
+        bool[,] shape = GenerateRandomShape();
+        
+        // Choose a single random color for all cubes in this shape
+        Color shapeColor = possibleColors.Length > 0 ? 
+            possibleColors[Random.Range(0, possibleColors.Length)] : 
+            Color.white;
+        
+        // Create cubes based on the shape
+        for (int y = 0; y < maxHeight; y++)
+        {
+            for (int x = 0; x < maxWidth; x++)
+            {
+                if (shape[x, y])
+                {
+                    // Calculate local position relative to shape center
+                    Vector3 localPos = new Vector3(
+                        (x - maxWidth/2f) * cubeSize,
+                        (-y + maxHeight/2f) * cubeSize,
+                        0);
+                        
+                    // Create cube at calculated local position
+                    GameObject cube = Instantiate(cubePrefab, Vector3.zero, Quaternion.identity, shapeParent.transform);
+                    cube.transform.localPosition = localPos;
+                    
+                    // Set the same color for all cubes in this shape
+                    var renderer = cube.GetComponent<Renderer>();
+                    if (renderer != null)
+                    {
+                        renderer.material.color = shapeColor;
+                    }
+                    
+                    currentShape.Add(cube);
+                }
+            }
+        }
+        
+        // Add CubeShape component to the shape
+        CubeShape cubeShape = shapeParent.AddComponent<CubeShape>();
         
         // Start the shape falling after a delay
         StartCoroutine(StartFallingAfterDelay(cubeShape, spawnDelay));
@@ -111,8 +132,8 @@ public class TetrisShapeSpawner : MonoBehaviour
         int startY = 0; // Start at the top
         shape[startX, startY] = true;
         
-        // Determine number of cubes in this shape (between 2 and 4 for Tetris-like shapes)
-        int numCubes = Random.Range(2, 5);
+        // Use the specified number of cubes
+        int numCubes = Mathf.Clamp(cubesInShape, 2, 4);
         Debug.Log($"Generating shape with {numCubes} cubes");
         
         // Add adjacent cubes
